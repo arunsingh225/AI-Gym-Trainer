@@ -7,4 +7,4 @@ venv/
 .venv/
 .git/
 .github/
-data.db-journal
+ai-gym-coach-main/main_app/data.db-journal

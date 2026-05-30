@@ -54,6 +54,10 @@ def main():
     with st.sidebar:
         st.title("🏋️‍♂️ Apna AI Coach")
 
+        if st.session_state.get("groq_api_error"):
+            st.error("⚠️ **AI Voice Coaching Disabled**\nThe Groq API Key is invalid or missing. Posture correction and rep tracking will still work normally.")
+            st.divider()
+
         if st.session_state.username:
             st.caption(f"👤 Login as {st.session_state.username}")
 

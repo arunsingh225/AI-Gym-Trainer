@@ -64,25 +64,33 @@ class VoicePipeline:
         return None
 
     def process_event(self, event, exercise, metrics):
-        issue = self._find_form_issue(exercise, metrics)
+        try:
+            issue = self._find_form_issue(exercise, metrics)
 
-        now = time.time()
+            now = time.time()
 
-        is_major_issue = event in ["workout_started", "set_completed", "workout_completed"]
+            is_major_issue = event in ["workout_started", "set_completed", "workout_completed"]
 
-        if not is_major_issue:
-            if not issue:
-                return None
-            
-            if now - self.last_spoken_at < 5:
-                return None
-            
-        text = self.llm.give_feedback(event, issue)
-        voice = self.tts.speak(text)
+            if not is_major_issue:
+                if not issue:
+                    return None
+                
+                if now - self.last_spoken_at < 5:
+                    return None
+                
+            text = self.llm.give_feedback(event, issue)
+            voice = self.tts.speak(text)
 
-        self.last_spoken_at = now
+            self.last_spoken_at = now
 
-        return voice, text
+            if "groq_api_error" in st.session_state:
+                del st.session_state["groq_api_error"]
+
+            return voice, text
+        except Exception as e:
+            st.session_state.groq_api_error = True
+            return None
+    
     
 
 def autoplay_audio(audio_bytes):

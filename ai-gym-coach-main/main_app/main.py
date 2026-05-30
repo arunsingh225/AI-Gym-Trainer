@@ -25,8 +25,10 @@ def main():
         layout="centered"
     )
 
-    load_css(os.path.join(os.getcwd(), "static", "style.css"))
-    inject_local_font(os.path.join(os.getcwd(), "static", "AdobeClean.otf"), "AdobeClean")
+    # Use __file__-relative path so CSS is found regardless of cwd
+    _app_dir = os.path.dirname(os.path.abspath(__file__))
+    load_css(os.path.join(_app_dir, "static", "style.css"))
+    # AdobeClean.otf removed — now using Inter (Google Fonts) defined in style.css
 
     init_db()
 
@@ -201,11 +203,28 @@ def main():
             unsafe_allow_html=True,
         )
     else:
+        # ICE servers: multiple STUN + free TURN (Open Relay Project)
+        # Required for WebRTC to work behind HF Spaces' restrictive NAT/firewall
+        ice_servers = [
+            {"urls": ["stun:stun.l.google.com:19302"]},
+            {"urls": ["stun:stun1.l.google.com:19302"]},
+            {"urls": ["stun:stun2.l.google.com:19302"]},
+            {
+                "urls": [
+                    "turn:openrelay.metered.ca:80",
+                    "turn:openrelay.metered.ca:443",
+                    "turn:openrelay.metered.ca:443?transport=tcp",
+                ],
+                "username": "openrelayproject",
+                "credential": "openrelayproject",
+            },
+        ]
+
         context = webrtc_streamer(
             key="exercise-analysis",
             mode=WebRtcMode.SENDRECV,
             video_processor_factory=VideoProcessorClass,
-            rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+            rtc_configuration={"iceServers": ice_servers},
             media_stream_constraints={
                 "video": True,
                 "audio": False

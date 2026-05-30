@@ -15,3 +15,9 @@ main_app/data.db
 
 # Logs
 *.log
+
+# Binary / LFS files – handled at build time (downloaded in Dockerfile)
+# HF Spaces rejects binary blobs pushed via Git
+main_app/ml_models/*.task
+main_app/static/*.otf
+main_app/static/*.ttf

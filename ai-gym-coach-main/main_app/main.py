@@ -235,6 +235,14 @@ def main():
         # WebRTC Connection Settings
         st.divider()
         with st.expander("🌐 WebRTC Connection Settings"):
+            # Check if running on HF Space and no Twilio env, show warning/guidance
+            if "SPACE_ID" in os.environ and not (os.environ.get("TWILIO_ACCOUNT_SID") and os.environ.get("TWILIO_AUTH_TOKEN")):
+                st.warning(
+                    "⚠️ **WebRTC Notice: Running on Hugging Face Spaces**\n\n"
+                    "WebRTC camera connections often time out inside Hugging Face iframes due to strict firewalls. "
+                    "To fix this permanently, please add your `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` to your **Hugging Face Space Secrets** (Settings > Variables and secrets)."
+                )
+
             st.markdown(
                 """
                 If your webcam is taking too long to connect, select a different server configuration.

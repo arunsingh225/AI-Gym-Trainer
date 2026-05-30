@@ -21,7 +21,14 @@ class VideoProcessorClass(VideoProcessorBase):
         self._latest_metrics = None
         self._exercise_type = "Squats"
 
-        model_path = os.path.join(os.getcwd(), "ml_models", "pose_landmarker_full.task")
+        # Use __file__-relative path so the model is found regardless of
+        # the working directory (fixes deployment on Hugging Face Spaces).
+        # This file is at: services/vision/exercise_video_processor.py
+        # Model is at:     ml_models/pose_landmarker_full.task  (two levels up)
+        _here = os.path.dirname(os.path.abspath(__file__))
+        model_path = os.path.normpath(
+            os.path.join(_here, "..", "..", "ml_models", "pose_landmarker_full.task")
+        )
         base_option = python.BaseOptions(model_asset_path=model_path)
 
         options = vision.PoseLandmarkerOptions(

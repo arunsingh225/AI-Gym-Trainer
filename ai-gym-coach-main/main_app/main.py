@@ -312,6 +312,19 @@ def main():
 
     st.title("AI Real-time GYM Coach")
     st.markdown("#### Real-time pose detection with proactive AI voice coaching")
+    
+    # Show dynamic direct URL banner if running inside HF Spaces iframe
+    if "SPACE_ID" in os.environ:
+        st.markdown(
+            """
+            <div style="background-color: #1e293b; border-left: 5px solid #3b82f6; padding: 12px 16px; border-radius: 4px; margin-bottom: 20px;">
+                <strong>🌐 Hugging Face Space User:</strong> If your camera gets stuck loading or shows network connection warnings, open the app in 
+                <a href="https://arunsingh225-ai-gym-coach.hf.space" target="_blank" style="color: #60a5fa; text-decoration: underline; font-weight: bold;">Direct Fullscreen Mode</a> 
+                to bypass iframe security restrictions.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
  
     if st.session_state.get("audio_to_play"):
         autoplay_audio(st.session_state.audio_to_play)
@@ -342,6 +355,13 @@ def main():
             unsafe_allow_html=True,
         )
     else:
+        # Show direct fullscreen link notice to bypass iframe WebRTC blocks on Hugging Face Spaces
+        if "SPACE_ID" in os.environ:
+            st.info(
+                "🌐 **Webcam Stuck loading?** If the connection times out or fails, please open the app in "
+                "[Direct Fullscreen Mode](https://arunsingh225-ai-gym-coach.hf.space) to bypass browser iframe sandbox restrictions."
+            )
+
         ice_servers = get_ice_servers()
 
         context = webrtc_streamer(

@@ -18,64 +18,63 @@ from services.coaching.tts import TextToSpeech
 from services.coaching.voice_pipeline import VoicePipeline, autoplay_audio
 
 
+@st.cache_data(ttl=3600)
+def _fetch_metered_turn(api_key):
+    """Fetch live TURN credentials from Metered.ca free API (cached 1hr)."""
+    try:
+        resp = requests.get(
+            f"https://ai-gym.metered.live/api/v1/turn/credentials?apiKey={api_key}",
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        pass
+    return None
+
+
+@st.cache_data(ttl=600)
+def _fetch_twilio_turn(sid, token):
+    """Fetch live TURN credentials from Twilio (cached 10min)."""
+    try:
+        resp = requests.post(
+            f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Tokens.json",
+            auth=(sid, token),
+            timeout=5,
+        )
+        if resp.status_code == 201:
+            return resp.json().get("ice_servers", [])
+    except Exception:
+        pass
+    return None
+
+
 def get_ice_servers():
-    selected_mode = st.session_state.get("webrtc_ice_mode", "Default (STUN + Metered TURN)")
-    
-    # Base fallback is always Google STUN
-    ice_servers = [{"urls": ["stun:stun.l.google.com:19302"]}]
-    
-    if selected_mode == "Default (STUN + Metered TURN)":
-        ice_servers.extend([
-            {"urls": ["stun:stun1.l.google.com:19302"]},
-            {"urls": ["stun:stun2.l.google.com:19302"]},
-            {
-                "urls": [
-                    "turn:openrelay.metered.ca:80",
-                    "turn:openrelay.metered.ca:443",
-                    "turn:openrelay.metered.ca:443?transport=tcp",
-                ],
-                "username": "openrelayproject",
-                "credential": "openrelayproject",
-            }
-        ])
-    elif selected_mode == "Google STUN Only":
-        ice_servers.extend([
-            {"urls": ["stun:stun1.l.google.com:19302"]},
-            {"urls": ["stun:stun2.l.google.com:19302"]}
-        ])
-    elif selected_mode == "Twilio TURN (Recommended)":
-        sid = st.session_state.get("twilio_sid", "")
-        token = st.session_state.get("twilio_token", "")
-        if sid and token:
-            try:
-                url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Tokens.json"
-                response = requests.post(url, auth=(sid, token), timeout=5)
-                if response.status_code == 201:
-                    fetched_servers = response.json().get("ice_servers", [])
-                    if fetched_servers:
-                        return fetched_servers
-                else:
-                    st.sidebar.error(f"Twilio API Error: {response.status_code}")
-            except Exception as e:
-                st.sidebar.error(f"Connection to Twilio failed: {e}")
-        # If Twilio fails or is empty, return STUN servers
-        ice_servers.extend([
-            {"urls": ["stun:stun1.l.google.com:19302"]},
-            {"urls": ["stun:stun2.l.google.com:19302"]}
-        ])
-    elif selected_mode == "Custom TURN Server":
-        c_url = st.session_state.get("custom_turn_url", "")
-        c_user = st.session_state.get("custom_turn_username", "")
-        c_pass = st.session_state.get("custom_turn_password", "")
-        if c_url:
-            server_dict = {"urls": [c_url]}
-            if c_user:
-                server_dict["username"] = c_user
-            if c_pass:
-                server_dict["credential"] = c_pass
-            ice_servers.append(server_dict)
-            
-    return ice_servers
+    """Return working ICE servers. Tries Metered.ca API → Twilio → STUN-only."""
+
+    # --- 1. Try Metered.ca free TURN API ---
+    metered_key = os.environ.get("METERED_API_KEY", "")
+    if metered_key:
+        creds = _fetch_metered_turn(metered_key)
+        if creds:
+            return creds  # Metered returns a ready-to-use iceServers list
+
+    # --- 2. Try Twilio TURN API ---
+    twilio_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
+    twilio_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+    if twilio_sid and twilio_token:
+        creds = _fetch_twilio_turn(twilio_sid, twilio_token)
+        if creds:
+            return creds
+
+    # --- 3. Fallback: STUN only (will fail behind strict NAT) ---
+    return [
+        {"urls": ["stun:stun.l.google.com:19302"]},
+        {"urls": ["stun:stun1.l.google.com:19302"]},
+        {"urls": ["stun:stun2.l.google.com:19302"]},
+        {"urls": ["stun:stun3.l.google.com:19302"]},
+        {"urls": ["stun:stun4.l.google.com:19302"]},
+    ]
 
 
 def main():
@@ -232,83 +231,25 @@ def main():
                 st.metric("Torso Angle", f"{st.session_state.torso_angle}°")
                 st.metric("Balance Status", st.session_state.balance_status)
 
-        # WebRTC Connection Settings
+        # WebRTC Connection Status
         st.divider()
-        with st.expander("🌐 WebRTC Connection Settings"):
-            # Check if running on HF Space and no Twilio env, show warning/guidance
-            if "SPACE_ID" in os.environ and not (os.environ.get("TWILIO_ACCOUNT_SID") and os.environ.get("TWILIO_AUTH_TOKEN")):
-                st.warning(
-                    "⚠️ **WebRTC Notice: Running on Hugging Face Spaces**\n\n"
-                    "WebRTC camera connections often time out inside Hugging Face iframes due to strict firewalls. "
-                    "To fix this permanently, please add your `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` to your **Hugging Face Space Secrets** (Settings > Variables and secrets)."
-                )
+        with st.expander("🌐 WebRTC Connection Status"):
+            has_metered = bool(os.environ.get("METERED_API_KEY"))
+            has_twilio = bool(os.environ.get("TWILIO_ACCOUNT_SID") and os.environ.get("TWILIO_AUTH_TOKEN"))
 
-            st.markdown(
-                """
-                If your webcam is taking too long to connect, select a different server configuration.
-                """
-            )
-            
-            # Check if Twilio env is available
-            has_twilio_env = bool(os.environ.get("TWILIO_ACCOUNT_SID") and os.environ.get("TWILIO_AUTH_TOKEN"))
-            
-            # Determine default index
-            mode_options = [
-                "Default (STUN + Metered TURN)",
-                "Google STUN Only",
-                "Twilio TURN (Recommended)",
-                "Custom TURN Server"
-            ]
-            default_mode = "Twilio TURN (Recommended)" if has_twilio_env else "Default (STUN + Metered TURN)"
-            
-            ice_mode = st.selectbox(
-                "Connection Mode",
-                options=mode_options,
-                index=mode_options.index(default_mode),
-                key="webrtc_ice_mode"
-            )
-            
-            if ice_mode == "Twilio TURN (Recommended)":
-                st.markdown(
-                    "[Get a free Twilio Account](https://www.twilio.com/try-twilio)"
+            if has_metered:
+                st.success("✅ Using **Metered.ca TURN** relay servers (recommended)")
+            elif has_twilio:
+                st.success("✅ Using **Twilio TURN** relay servers")
+            else:
+                st.error(
+                    "❌ **No TURN server configured — camera will likely fail!**\n\n"
+                    "Add **one** of these to your HF Space Secrets (Settings → Variables and secrets):\n\n"
+                    "**Option A (easiest, free):**\n"
+                    "- `METERED_API_KEY` — [Sign up at metered.ca](https://www.metered.ca/) (free, no credit card)\n\n"
+                    "**Option B:**\n"
+                    "- `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` — [Get Twilio trial](https://www.twilio.com/try-twilio)"
                 )
-                twilio_sid = st.text_input(
-                    "Twilio Account SID",
-                    value=os.environ.get("TWILIO_ACCOUNT_SID", st.session_state.get("twilio_sid", "")),
-                    key="twilio_sid_input"
-                )
-                twilio_token = st.text_input(
-                    "Twilio Auth Token",
-                    value=os.environ.get("TWILIO_AUTH_TOKEN", st.session_state.get("twilio_token", "")),
-                    type="password",
-                    key="twilio_token_input"
-                )
-                
-                st.session_state.twilio_sid = twilio_sid
-                st.session_state.twilio_token = twilio_token
-
-            elif ice_mode == "Custom TURN Server":
-                custom_url = st.text_input(
-                    "TURN URL",
-                    value=st.session_state.get("custom_turn_url", ""),
-                    placeholder="turn:example.com:3478",
-                    key="custom_turn_url_input"
-                )
-                custom_username = st.text_input(
-                    "Username",
-                    value=st.session_state.get("custom_turn_username", ""),
-                    key="custom_turn_username_input"
-                )
-                custom_password = st.text_input(
-                    "Password/Credential",
-                    value=st.session_state.get("custom_turn_password", ""),
-                    type="password",
-                    key="custom_turn_password_input"
-                )
-                
-                st.session_state.custom_turn_url = custom_url
-                st.session_state.custom_turn_username = custom_username
-                st.session_state.custom_turn_password = custom_password
 
     st.title("AI Real-time GYM Coach")
     st.markdown("#### Real-time pose detection with proactive AI voice coaching")
